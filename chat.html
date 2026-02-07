@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Live Chat Keyboard-Aware</title>
+<title>Live Chat with Link Preview</title>
 <style>
 body{margin:0;font-family:Arial,sans-serif;background:#ECE5DD;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
 header{background:#075E54;color:white;padding:15px;text-align:center;font-size:20px;position:relative;}
@@ -16,6 +16,8 @@ header button:hover{background:#128C7E;}
 .message .sender{font-weight:bold;font-size:13px;margin-bottom:3px;display:block;}
 .message .time{font-size:11px;color:#888;margin-top:3px;display:block;text-align:right;}
 .message.pinned{border:2px solid #FFD700;}
+.linkPreview{border:1px solid #ddd;border-radius:10px;margin-top:5px;padding:5px;background:#f0f0f0;}
+.linkPreview img{max-width:100%;border-radius:5px;margin-top:5px;}
 #sendSection{position:fixed;bottom:0;left:0;right:0;display:flex;padding:10px;background:#FFFFFF;align-items:center;box-shadow:0 -2px 5px rgba(0,0,0,0.1);z-index:1000;}
 #msgInput{flex:1;padding:10px;border-radius:20px;border:1px solid #ddd;outline:none;box-sizing:border-box;}
 #sendBtn{padding:10px 20px;margin-left:5px;border:none;border-radius:20px;background:#075E54;color:white;cursor:pointer;}
@@ -44,14 +46,10 @@ header button:hover{background:#128C7E;}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
-// Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyA-4MkwjEjPeiq6L9kpMKanHc0gx6tc4zM",
+  apiKey: "AIzaSyA-4MkwjEjPeiq6L9kpMKanHc0gx6tc4zM", // Replace with your config
   authDomain: "chatwithus-e8278.firebaseapp.com",
-  projectId: "chatwithus-e8278",
-  storageBucket: "chatwithus-e8278.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdefghijk"
+  projectId: "chatwithus-e8278"
 };
 firebase.initializeApp(firebaseConfig);
 
@@ -69,7 +67,7 @@ const adminEmail = "khanaariziqballl.tt1@gmail.com";
 
 if(!uid) window.location.href='index.html';
 
-// Send message
+// ------------------ Send Message ------------------
 function sendMessage(){
   const text = msgInput.value.trim();
   if(!text) return;
@@ -87,15 +85,15 @@ function sendMessage(){
 sendBtn.addEventListener('click', sendMessage);
 msgInput.addEventListener('keypress', e=>{ if(e.key==='Enter') sendMessage(); });
 
-// Format date/time
+// ------------------ Format Time ------------------
 function formatDateTime(ts){
     if(!ts) return '';
     const d = new Date(ts.seconds*1000);
     return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
 }
 
-// Create message element
-function createMessage(msg){
+// ------------------ Create Message Element with Link Preview ------------------
+async function createMessage(msg){
     const div = document.createElement('div');
     div.className = msg.uid===uid?'message self':'message other';
     if(msg.pinned) div.classList.add('pinned');
@@ -117,21 +115,47 @@ function createMessage(msg){
         div.appendChild(pinBtn);
     }
 
+    // Detect link in message
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urls = msg.text.match(urlRegex);
+    if(urls){
+      for(let url of urls){
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'linkPreview';
+        previewDiv.innerText = 'Loading preview...';
+        div.appendChild(previewDiv);
+
+        // Fetch link preview from free API
+        fetch(`https://api.linkpreview.net/?key=YOUR_API_KEY&q=${encodeURIComponent(url)}`)
+        .then(res=>res.json())
+        .then(data=>{
+          previewDiv.innerHTML = `
+            <strong>${data.title}</strong>
+            <p>${data.description}</p>
+            ${data.image?`<img src="${data.image}" alt="preview">`:''}
+            <a href="${url}" target="_blank">${url}</a>
+          `;
+        })
+        .catch(()=> previewDiv.innerText = url);
+      }
+    }
+
     return div;
 }
 
-// Fetch & render messages with auto-scroll
+// ------------------ Fetch Messages ------------------
 db.collection('messages').orderBy('time')
-.onSnapshot(snapshot=>{
+.onSnapshot(async snapshot=>{
   chatBox.innerHTML='';
-  snapshot.forEach(doc=>{
+  for(const doc of snapshot.docs){
     const msg = {...doc.data(), id:doc.id};
-    chatBox.appendChild(createMessage(msg));
-  });
+    const msgEl = await createMessage(msg);
+    chatBox.appendChild(msgEl);
+  }
   chatBox.scrollTo({top: chatBox.scrollHeight, behavior:'smooth'});
 });
 
-// 🔹 Keyboard aware: adjust chatBox padding dynamically
+// ------------------ Keyboard-aware ------------------
 let originalHeight = window.innerHeight;
 function adjustForKeyboard(){
   const currentHeight = window.innerHeight;
@@ -139,16 +163,15 @@ function adjustForKeyboard(){
   chatBox.style.paddingBottom = (kbHeight>150?kbHeight+70:80) + 'px';
   chatBox.scrollTo({top: chatBox.scrollHeight, behavior:'smooth'});
 }
-
 window.addEventListener('resize', adjustForKeyboard);
 msgInput.addEventListener('focus', adjustForKeyboard);
 msgInput.addEventListener('blur', adjustForKeyboard);
 
-// Logout
+// ------------------ Logout ------------------
 function logout(){
   localStorage.clear();
   window.location.href='index.html';
 }
 </script>
 </body>
-  </html>
+</html>
