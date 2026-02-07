@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Chat Keyboard-Aware</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#ECE5DD;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+header{background:#075E54;color:white;padding:15px;text-align:center;font-size:20px;position:relative;}
+header button{position:absolute;right:10px;top:10px;padding:8px 15px;border:none;border-radius:8px;background:#25D366;color:white;cursor:pointer;}
+header button:hover{background:#128C7E;}
+#chatBox{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;padding-bottom:80px;background:#ECE5DD;}
+.message{padding:10px 15px;border-radius:20px;max-width:70%;position:relative;word-wrap:break-word;font-size:14px;}
+.message.self{background:#DCF8C6;align-self:flex-end;border-bottom-right-radius:5px;}
+.message.other{background:#FFFFFF;align-self:flex-start;box-shadow:0 1px 2px rgba(0,0,0,0.2);border-bottom-left-radius:5px;}
+.message .sender{font-weight:bold;font-size:13px;margin-bottom:3px;display:block;}
+.message .time{font-size:11px;color:#888;margin-top:3px;display:block;text-align:right;}
+.message.pinned{border:2px solid #FFD700;}
+#sendSection{position:fixed;bottom:0;left:0;right:0;display:flex;padding:10px;background:#FFFFFF;align-items:center;box-shadow:0 -2px 5px rgba(0,0,0,0.1);z-index:1000;}
+#msgInput{flex:1;padding:10px;border-radius:20px;border:1px solid #ddd;outline:none;box-sizing:border-box;}
+#sendBtn{padding:10px 20px;margin-left:5px;border:none;border-radius:20px;background:#075E54;color:white;cursor:pointer;}
+#sendBtn:hover{background:#128C7E;}
+.pinBtn{position:absolute;left:5px;top:5px;color:gold;font-weight:bold;cursor:pointer;}
+.deleteBtn{position:absolute;top:5px;right:5px;color:red;font-weight:bold;cursor:pointer;}
+@media(max-width:480px){.message{max-width:90%;font-size:13px;}#msgInput{padding:8px;}#sendBtn{padding:8px 12px;}}
+</style>
+</head>
+<body>
+
+<header>Live Chat
+<button onclick="logout()">Logout</button>
+</header>
+
+<div id="chatBox"></div>
+
+<div id="sendSection">
+  <input type="text" id="msgInput" placeholder="Type a message">
+  <button id="sendBtn">Send</button>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyA-4MkwjEjPeiq6L9kpMKanHc0gx6tc4zM",
+  authDomain: "chatwithus-e8278.firebaseapp.com",
+  projectId: "chatwithus-e8278",
+  storageBucket: "chatwithus-e8278.appspot.com",
+  messagingSenderId: "1234567890",
+  appId: "1:1234567890:web:abcdefghijk"
+};
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const chatBox = document.getElementById('chatBox');
+const msgInput = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+
+const uid = localStorage.getItem('uid');
+const name = localStorage.getItem('name');
+const email = localStorage.getItem('email');
+const adminEmail = "khanaariziqballl.tt1@gmail.com";
+
+if(!uid) window.location.href='index.html';
+
+// Send message
+function sendMessage(){
+  const text = msgInput.value.trim();
+  if(!text) return;
+
+  db.collection('messages').add({
+    text,
+    uid,
+    name,
+    email,
+    pinned:false,
+    time:firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=> msgInput.value='');
+}
+
+sendBtn.addEventListener('click', sendMessage);
+msgInput.addEventListener('keypress', e=>{ if(e.key==='Enter') sendMessage(); });
+
+// Format date/time
+function formatDateTime(ts){
+    if(!ts) return '';
+    const d = new Date(ts.seconds*1000);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+}
+
+// Create message element
+function createMessage(msg){
+    const div = document.createElement('div');
+    div.className = msg.uid===uid?'message self':'message other';
+    if(msg.pinned) div.classList.add('pinned');
+
+    div.innerHTML = `<span class="sender">${msg.name || "Unknown"}</span>${msg.text}<span class="time">${formatDateTime(msg.time)}</span>`;
+
+    // Admin controls
+    if(email===adminEmail){
+        const delBtn = document.createElement('span');
+        delBtn.className='deleteBtn';
+        delBtn.innerText='×';
+        delBtn.onclick = ()=> db.collection('messages').doc(msg.id).delete();
+        div.appendChild(delBtn);
+
+        const pinBtn = document.createElement('span');
+        pinBtn.className='pinBtn';
+        pinBtn.innerText='📌';
+        pinBtn.onclick = ()=> db.collection('messages').doc(msg.id).update({pinned:true});
+        div.appendChild(pinBtn);
+    }
+
+    return div;
+}
+
+// Fetch & render messages with auto-scroll
+db.collection('messages').orderBy('time')
+.onSnapshot(snapshot=>{
+  chatBox.innerHTML='';
+  snapshot.forEach(doc=>{
+    const msg = {...doc.data(), id:doc.id};
+    chatBox.appendChild(createMessage(msg));
+  });
+  chatBox.scrollTo({top: chatBox.scrollHeight, behavior:'smooth'});
+});
+
+// 🔹 Keyboard aware: adjust chatBox padding dynamically
+let originalHeight = window.innerHeight;
+function adjustForKeyboard(){
+  const currentHeight = window.innerHeight;
+  const kbHeight = originalHeight - currentHeight;
+  chatBox.style.paddingBottom = (kbHeight>150?kbHeight+70:80) + 'px';
+  chatBox.scrollTo({top: chatBox.scrollHeight, behavior:'smooth'});
+}
+
+window.addEventListener('resize', adjustForKeyboard);
+msgInput.addEventListener('focus', adjustForKeyboard);
+msgInput.addEventListener('blur', adjustForKeyboard);
+
+// Logout
+function logout(){
+  localStorage.clear();
+  window.location.href='index.html';
+}
+</script>
+</body>
+  </html>
